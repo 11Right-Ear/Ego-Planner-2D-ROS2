@@ -1,0 +1,306 @@
+<?xml version="1.0"?>
+<!-- Hunter-inspired Ackermann vehicle model for RViz / future Gazebo migration.
+     Simple primitives preserve accurate dimensions, link frames and joint axes. -->
+<robot name="ackermann_hunter" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="prefix" default=""/>
+  <xacro:property name="prefix" value="$(arg prefix)"/>
+
+  <!-- ======================= Hunter-like dimensions ======================= -->
+  <xacro:property name="wheelbase"       value="0.65142"/>
+  <xacro:property name="track"           value="0.584"/>
+  <xacro:property name="wheel_radius"    value="0.164"/>
+  <xacro:property name="wheel_width"     value="0.142"/>
+  <xacro:property name="body_length"     value="0.964"/>
+  <xacro:property name="body_width"      value="0.644"/>
+  <xacro:property name="body_height"     value="0.268"/>
+  <xacro:property name="base_height"     value="0.360"/>
+  <xacro:property name="wheel_z"         value="${wheel_radius - base_height}"/>
+
+  <xacro:property name="body_mass"       value="35.0"/>
+  <xacro:property name="wheel_mass"      value="2.0"/>
+  <xacro:property name="steer_mass"      value="0.45"/>
+
+  <xacro:macro name="box_inertia" params="m x y z">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${m * (y*y + z*z) / 12.0}" ixy="0.0" ixz="0.0"
+               iyy="${m * (x*x + z*z) / 12.0}" iyz="0.0"
+               izz="${m * (x*x + y*y) / 12.0}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Wheel axis is the link-frame Y axis. -->
+  <xacro:macro name="wheel_inertia" params="m r w">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${m * (3.0*r*r + w*w) / 12.0}" ixy="0.0" ixz="0.0"
+               iyy="${m * r*r / 2.0}" iyz="0.0"
+               izz="${m * (3.0*r*r + w*w) / 12.0}"/>
+    </inertial>
+  </xacro:macro>
+
+  <material name="hunter_orange"><color rgba="0.95 0.36 0.05 1.0"/></material>
+  <material name="hunter_dark"><color rgba="0.10 0.11 0.12 1.0"/></material>
+  <material name="tyre_black"><color rgba="0.025 0.025 0.025 1.0"/></material>
+  <material name="metal_gray"><color rgba="0.55 0.57 0.60 1.0"/></material>
+  <material name="sensor_blue"><color rgba="0.05 0.30 0.85 1.0"/></material>
+
+  <!-- ========================== Base / footprint ========================== -->
+  <link name="${prefix}base_footprint"/>
+  <joint name="${prefix}base_joint" type="fixed">
+    <parent link="${prefix}base_footprint"/>
+    <child link="${prefix}base_link"/>
+    <origin xyz="0 0 ${base_height}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="${prefix}base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${body_length} ${body_width} ${body_height}"/></geometry>
+      <material name="hunter_orange"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${body_length} ${body_width} ${body_height}"/></geometry>
+    </collision>
+    <xacro:box_inertia m="${body_mass}" x="${body_length}" y="${body_width}" z="${body_height}"/>
+  </link>
+
+  <link name="${prefix}cabin_link">
+    <visual>
+      <origin xyz="-0.035 0 ${body_height/2.0 + 0.075}" rpy="0 0 0"/>
+      <geometry><box size="0.36 0.46 0.15"/></geometry>
+      <material name="hunter_dark"/>
+    </visual>
+    <collision>
+      <origin xyz="-0.035 0 ${body_height/2.0 + 0.075}" rpy="0 0 0"/>
+      <geometry><box size="0.36 0.46 0.15"/></geometry>
+    </collision>
+    <xacro:box_inertia m="3.0" x="0.36" y="0.46" z="0.15"/>
+  </link>
+  <joint name="${prefix}cabin_joint" type="fixed">
+    <parent link="${prefix}base_link"/>
+    <child link="${prefix}cabin_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="${prefix}sensor_mast_link">
+    <visual>
+      <origin xyz="0.18 0 ${body_height/2.0 + 0.25}" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.018" length="0.38"/></geometry>
+      <material name="metal_gray"/>
+    </visual>
+    <collision>
+      <origin xyz="0.18 0 ${body_height/2.0 + 0.25}" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.018" length="0.38"/></geometry>
+    </collision>
+    <xacro:box_inertia m="0.25" x="0.036" y="0.036" z="0.38"/>
+  </link>
+  <joint name="${prefix}sensor_mast_joint" type="fixed">
+    <parent link="${prefix}base_link"/>
+    <child link="${prefix}sensor_mast_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="${prefix}sensor_head_link">
+    <visual>
+      <origin xyz="0.18 0 ${body_height/2.0 + 0.47}" rpy="0 0 0"/>
+      <geometry><box size="0.16 0.11 0.075"/></geometry>
+      <material name="sensor_blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0.18 0 ${body_height/2.0 + 0.47}" rpy="0 0 0"/>
+      <geometry><box size="0.16 0.11 0.075"/></geometry>
+    </collision>
+    <xacro:box_inertia m="0.35" x="0.16" y="0.11" z="0.075"/>
+  </link>
+  <joint name="${prefix}sensor_head_joint" type="fixed">
+    <parent link="${prefix}base_link"/>
+    <child link="${prefix}sensor_head_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ===================== Wheel and steering macro ======================= -->
+  <xacro:macro name="steered_wheel" params="side xyz">
+    <link name="${prefix}front_${side}_steer_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><cylinder radius="0.040" length="0.055"/></geometry>
+        <material name="metal_gray"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><cylinder radius="0.040" length="0.055"/></geometry>
+      </collision>
+      <xacro:box_inertia m="${steer_mass}" x="0.08" y="0.08" z="0.055"/>
+    </link>
+
+    <joint name="${prefix}front_${side}_steer_joint" type="revolute">
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}front_${side}_steer_link"/>
+      <origin xyz="${xyz}" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-0.62" upper="0.62" effort="120.0" velocity="2.0"/>
+      <dynamics damping="0.4" friction="0.05"/>
+    </joint>
+
+    <link name="${prefix}front_${side}_wheel_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <material name="tyre_black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+      </collision>
+      <xacro:wheel_inertia m="${wheel_mass}" r="${wheel_radius}" w="${wheel_width}"/>
+    </link>
+
+    <joint name="${prefix}front_${side}_wheel_joint" type="continuous">
+      <parent link="${prefix}front_${side}_steer_link"/>
+      <child link="${prefix}front_${side}_wheel_link"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit effort="120.0" velocity="25.0"/>
+      <dynamics damping="0.15" friction="0.03"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="rear_wheel" params="side xyz">
+    <link name="${prefix}rear_${side}_wheel_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <material name="tyre_black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+      </collision>
+      <xacro:wheel_inertia m="${wheel_mass}" r="${wheel_radius}" w="${wheel_width}"/>
+    </link>
+
+    <joint name="${prefix}rear_${side}_wheel_joint" type="continuous">
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}rear_${side}_wheel_link"/>
+      <origin xyz="${xyz}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit effort="120.0" velocity="25.0"/>
+      <dynamics damping="0.15" friction="0.03"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:steered_wheel side="left"  xyz="${wheelbase/2.0}  ${track/2.0} ${wheel_z}"/>
+  <xacro:steered_wheel side="right" xyz="${wheelbase/2.0}  ${-track/2.0} ${wheel_z}"/>
+  <xacro:rear_wheel    side="left"  xyz="${-wheelbase/2.0} ${track/2.0} ${wheel_z}"/>
+  <xacro:rear_wheel    side="right" xyz="${-wheelbase/2.0} ${-track/2.0} ${wheel_z}"/>
+
+  <!-- Axle housings are cosmetic but help convey a physical chassis. -->
+  <link name="${prefix}front_axle_link">
+    <visual>
+      <origin xyz="${wheelbase/2.0} 0 ${wheel_z}" rpy="1.57079632679 0 0"/>
+      <geometry><cylinder radius="0.025" length="${track - 0.10}"/></geometry>
+      <material name="hunter_dark"/>
+    </visual>
+  </link>
+  <joint name="${prefix}front_axle_joint" type="fixed">
+    <parent link="${prefix}base_link"/>
+    <child link="${prefix}front_axle_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="${prefix}rear_axle_link">
+    <visual>
+      <origin xyz="${-wheelbase/2.0} 0 ${wheel_z}" rpy="1.57079632679 0 0"/>
+      <geometry><cylinder radius="0.025" length="${track - 0.10}"/></geometry>
+      <material name="hunter_dark"/>
+    </visual>
+  </link>
+  <joint name="${prefix}rear_axle_joint" type="fixed">
+    <parent link="${prefix}base_link"/>
+    <child link="${prefix}rear_axle_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ==================== Gazebo Classic ros2_control ==================== -->
+  <!-- The rear wheels provide traction; the front steering joints receive
+       position commands.  The front wheel rolling joints are passive. -->
+  <ros2_control name="AckermannGazeboSystem" type="system">
+    <hardware>
+      <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+    </hardware>
+
+    <joint name="front_left_steer_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="front_right_steer_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="front_left_wheel_joint">
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="front_right_wheel_joint">
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="rear_left_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="rear_right_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+  <gazebo reference="${prefix}base_link">
+    <material>Gazebo/Orange</material>
+    <mu1>0.1</mu1>
+    <mu2>0.1</mu2>
+  </gazebo>
+  <gazebo reference="${prefix}cabin_link">
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+  <gazebo reference="${prefix}front_left_wheel_link">
+    <material>Gazebo/Black</material>
+    <mu1>1.2</mu1>
+    <mu2>1.2</mu2>
+    <kp>1000000.0</kp>
+    <kd>100.0</kd>
+  </gazebo>
+  <gazebo reference="${prefix}front_right_wheel_link">
+    <material>Gazebo/Black</material>
+    <mu1>1.2</mu1>
+    <mu2>1.2</mu2>
+    <kp>1000000.0</kp>
+    <kd>100.0</kd>
+  </gazebo>
+  <gazebo reference="${prefix}rear_left_wheel_link">
+    <material>Gazebo/Black</material>
+    <mu1>1.2</mu1>
+    <mu2>1.2</mu2>
+    <kp>1000000.0</kp>
+    <kd>100.0</kd>
+  </gazebo>
+  <gazebo reference="${prefix}rear_right_wheel_link">
+    <material>Gazebo/Black</material>
+    <mu1>1.2</mu1>
+    <mu2>1.2</mu2>
+    <kp>1000000.0</kp>
+    <kd>100.0</kd>
+  </gazebo>
+
+  <gazebo>
+    <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+      <parameters>$(find ackermann_car_sim)/config/gazebo_controllers.yaml</parameters>
+    </plugin>
+  </gazebo>
+</robot>

@@ -1,157 +1,265 @@
-# Ego-Planner-2D-ROS2
+# Ackermann EGO-Planner RViz / Gazebo Simulation
 
-[![ROS2](https://img.shields.io/badge/ROS2-Humble%2FIron%2FJazzy-blue.svg)](https://docs.ros.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)]()
-[![C++](https://img.shields.io/badge/Language-C++17-orange.svg)]()
+基于 **Ego-Planner-2D-ROS2** 的 ROS 2 Humble 阿克曼小车仿真工程，提供两种运行模式：
 
-> **真正的地面移动机器人 2D 轨迹优化方案**  
-> 基于浙大高飞团队优秀的开源工作 Ego-Planner 进行深度二次开发，从底层算法层面进行了真正的降维重构，使其完全适配 2D 导航场景。
+1. **RViz 假定位模式**：不需要 Gazebo，车模沿 B 样条轨迹在 RViz 中运动。
+2. **Gazebo 真实底盘模式**：使用 Gazebo Classic + `gazebo_ros2_control` + `ackermann_steering_controller`，由物理引擎驱动真实底盘。
 
-🔗 **项目地址**：[https://github.com/JackJu-HIT/Ego-Planner-2D-ROS2](https://github.com/JackJu-HIT/Ego-Planner-2D-ROS2)
+两种模式共享同一套规划流程：
+
+- RViz `2D Goal Pose` 设置目标
+- EGO Planner 生成完整 A* 全局路线
+- B 样条（B-spline）优化局部轨迹
+- 阿克曼底盘跟踪 B 样条轨迹
+
+> Gazebo 底盘接入参考了 AgileX 官方仓库：
+> <https://github.com/agilexrobotics/ugv_gazebo_sim>
+>
+> 官方 Hunter 包是 ROS 1/Melodic 方案，本工程将其控制思想迁移为 ROS 2 Humble 原生方案：
+> `gazebo_ros2_control` + `ackermann_steering_controller` + `joint_state_broadcaster`。
+> 底盘尺寸采用 Hunter 参数，外观仍使用精确尺寸的简化几何。
 
 ---
 
-## 📅 更新日志（Changelog）
+## 1. 环境要求
 
-### 最新版本：ROS 2 + RViz 交互式运动仿真
+- Ubuntu 22.04
+- ROS 2 Humble
+- Gazebo Classic 11
+- colcon、RViz2、xacro、robot_state_publisher
+- 以下 ROS 2 包：
+  - `gazebo_ros`
+  - `gazebo_ros2_control`
+  - `controller_manager`
+  - `joint_state_broadcaster`
+  - `ackermann_steering_controller`
 
-基于 **Ego-Planner-2D-ROS2** 整理并扩展的 ROS 2 + RViz 交互式运动仿真工程。
+如果使用 Docker，请进入已配置好的 Humble 容器后，在工作区根目录执行命令。
 
-> [!IMPORTANT]
-> 最新功能位于 `develop` 分支，请先切换分支：
+---
+
+## 2. 编译
 
 ```bash
-git switch develop
-```
-
-当前版本不仅包含 Ego Planner 2D 局部轨迹规划节点，还集成了以下功能：
-
-- 简易小车运动仿真
-- RViz 交互式路径设置
-- RViz 交互式障碍物添加
-- 局部轨迹跟踪
-- 规划结果实时可视化
-- Launch 一键启动
-
-通过 Launch 文件可同时启动以下节点：
-
-| 节点 | 功能说明 |
-| --- | --- |
-| `ego_planner/motion_plan` | 二维局部轨迹规划与可视化 |
-| `rviz_car_sim/fake_sim_node` | 简易小车运动仿真与轨迹跟踪 |
-| `rviz2` | 自动加载仓库内置的 RViz 配置 |
-
----
-
-### 2025-12-10
-
-#### ✨ 新增功能
-
-- 新增 GridMap 膨胀障碍物的 RViz 2 可视化功能。
-- 支持通过以下话题查看局部障碍物及其膨胀结果：
-
-```text
-/visual_local_obstacles
-```
-
-#### 🐛 问题修复
-
-- 修复 GridMap 在特定边界条件下可能出现的异常问题。
-- 提升局部地图在边界区域更新时的稳定性。
-
----
-
-## 🚀 项目简介 (Introduction)
-
-本项目针对地面移动机器人（AGV/AMR）的特性，对原有的 Ego-Planner 算法进行了核心重构。不同于简单的“压扁”三维轨迹，我们从**优化器底层数学模型**到**环境地图表达**进行了全面的二维化改造，实现了更高效、更轻量的平面轨迹规划。
-
-### ✨ 核心特性 (Key Features)
-
-#### 1. 真正的 2D 轨迹优化 (True 2D Optimization)
-重构了轨迹优化器的核心数学模型，将优化变量从 3 维降至 2 维（仅优化 $x, y$）。**彻底移除了 Z 轴的冗余计算**，实现了数学意义上的平面轨迹规划，显著提升了求解效率。
-
-#### 2. 环境层重构 (Environment Refactoring)
-将原有的 3D 环境表达重构为 **2D GridMap（栅格地图）**。这一改进大幅降低了内存占用，并显著提高了环境查询与碰撞检测的计算速度。
-
-#### 3. 寻路算法降维 (2D A* Search)
-对 Path Searching 模块中的 A* 算法进行了降维适配，专注于平面路径搜索，生成的初始路径更贴合地面移动需求。
-
-#### 4. 纯 C++ 核心与解耦 (Pure C++ Core)
-剥离了原算法对 ROS1 的依赖，核心算法逻辑采用**纯 C++ 实现**，模块化程度高，具有极高的可移植性，易于集成到其他系统。
-
-#### 5. 全面适配 ROS 2 (ROS 2 Support)
-项目采用 ROS 2 作为外壳封装，完全适配 ROS 2 通信框架。支持 Rviz2 交互式仿真，提供流畅的可视化交互体验，开箱即用。
-
----
-
-## 🛠️ 编译与运行 (How to use)
-
-请确保您的环境已安装 ROS 2 及相关依赖。
-
-### 1. 编译项目
-```bash
-colcon build
+source /opt/ros/humble/setup.bash
+cd <仓库根目录>
+colcon build --packages-select ego_planner ackermann_car_sim
 source install/setup.bash
 ```
 
-### 2. 运行步骤
-1.  **启动规划节点**：
-    ```bash
-    ros2 run ego_planner motion_plan
-    ```
-2.  **启动可视化界面**：
-    ```bash
-    rviz2
-    # 建议加载项目提供的 rviz 配置文件（如有）
-    ```
-3.  **交互测试**：
+---
 
-启动项目后，可通过 RViz2 依次设置全局目标点、模拟障碍物和机器人起点。
+## 3. 运行模式一：RViz 假定位
 
-> [!IMPORTANT]
-> 请严格按照以下顺序进行操作，否则可能导致规划无法正常触发或可视化结果异常。
+```bash
+ros2 launch ackermann_car_sim bringup.launch.py
+```
 
-1. 使用 `Publish Point` 工具设置全局目标点；
-2. 使用 `2D Goal Pose` 工具添加模拟障碍物；
-3. 使用 `2D Pose Estimate` 工具设置机器人起点，也可以直接使用程序中的默认起点。
+或：
 
-完成上述操作后，可在 RViz2 中观察以下可视化结果：
+```bash
+./start.sh
+```
 
-* 全局参考路径；
-* A* 搜索路径；
-* 优化后的局部轨迹；
-* 障碍物及其膨胀结果。
+只启动节点、不打开 RViz：
 
+```bash
+ros2 launch ackermann_car_sim bringup.launch.py use_rviz:=false
+```
+
+### 操作步骤
+
+1. 点击 RViz 工具栏 **2D Pose Estimate**，设置初始位置和朝向。
+2. 点击 **2D Goal Pose**，设置目标点。
+3. 规划器自动生成 A* 全局路线和 B 样条轨迹。
+4. 假定位节点驱动车模沿 B 样条轨迹运动。
+
+### 可选：添加障碍物
+
+点击 **Publish Point** 添加障碍物点，规划器会重新规划并绕开障碍物。
 
 ---
 
-## 🔗 参考与致谢 (References)
+## 4. 运行模式二：Gazebo 真实底盘
 
-本项目核心算法源自 **ZJU-FAST-Lab** 团队的优秀开源工作，特此感谢。
+```bash
+ros2 launch ackermann_car_sim gazebo.launch.py
+```
 
-*   **Original Project**: [ZJU-FAST-Lab/ego-planner](https://github.com/ZJU-FAST-Lab/ego-planner)
+无 Gazebo GUI（适合服务器或无显示环境）：
+
+```bash
+ros2 launch ackermann_car_sim gazebo.launch.py use_gui:=false
+```
+
+无 Gazebo GUI 且无 RViz：
+
+```bash
+ros2 launch ackermann_car_sim gazebo.launch.py use_gui:=false use_rviz:=false
+```
+
+或使用脚本：
+
+```bash
+./start_gazebo.sh
+```
+
+### Gazebo 模式操作步骤
+
+1. Gazebo 在原点生成 Hunter 底盘。
+2. `/ackermann_steering_controller/odometry` 自动向规划器提供当前位姿，因此不需要 `2D Pose Estimate`。
+3. 在 RViz 中点击 **2D Goal Pose** 设置目标。
+4. `gazebo_path_follower` 将 B 样条轨迹转换为 `TwistStamped` 速度指令。
+5. `ackermann_steering_controller` 根据 Ackermann 运动学控制前轮转角和后轮速度。
+6. Gazebo 物理引擎驱动底盘运动，里程计反馈给规划器形成闭环。
+
+### Gazebo 控制链
+
+```text
+EGO Planner B-spline
+        ↓ /visual_local_trajectory
+gazebo_path_follower
+        ↓ /ackermann_steering_controller/reference  (TwistStamped)
+ackermann_steering_controller
+        ↓ ros2_control command interfaces
+gazebo_ros2_control / Gazebo Classic
+        ↓
+Hunter chassis physics
+        ↓ odometry + TF
+planner / RViz
+```
+
+### 控制器检查
+
+```bash
+ros2 control list_controllers
+```
+
+正常输出应包含：
+
+```text
+joint_state_broadcaster         active
+ackermann_steering_controller   active
+```
+
+### 主要 Gazebo 话题
+
+| 话题 | 类型 | 说明 |
+| --- | --- | --- |
+| `/ackermann_steering_controller/reference` | `geometry_msgs/msg/TwistStamped` | 路径跟踪节点输出的线速度/角速度 |
+| `/ackermann_steering_controller/odometry` | `nav_msgs/msg/Odometry` | Gazebo 底盘里程计 |
+| `/ackermann_steering_controller/tf_odometry` | `tf2_msgs/msg/TFMessage` | 控制器里程计 TF |
+| `/ackermann_steering_controller/controller_state` | `control_msgs/msg/SteeringControllerStatus` | 转向角与车轮速度状态 |
+| `/joint_states` | `sensor_msgs/msg/JointState` | 四轮及前轮转向关节状态 |
+| `/current_pose` | `geometry_msgs/msg/PoseStamped` | 转换到 `map` 坐标系的当前位姿 |
 
 ---
 
-## 📢 更多信息 (More Info)
+## 5. RViz 显示说明
 
-如果您对轨迹优化与运动控制感兴趣，欢迎关注我的媒体渠道获取更多技术分享：
+| 显示项 | 颜色/类型 | 话题 |
+| --- | --- | --- |
+| Reference Path | 蓝色线 | `/visual_global_path` |
+| A* Global Route | 橙红色线 | `/trajectories` |
+| B-spline Optimized Path | 绿色线 | `/visual_local_trajectory` |
+| Ackermann Model | URDF 机器人模型 | `/robot_description` + `/joint_states` |
+| Obstacles | 白色点云 | `/visual_obstacles` |
 
-*   **微信公众号**：`机器人规划与控制研究所`
-    *   [点击阅读相关技术文章](https://mp.weixin.qq.com/s/tjHMyyEMzsonYaVbrq4WTQ)
-    *   *如需加入交流群，请通过公众号后台联系我。*
-*   **Bilibili**：`机器人算法研究所`
-    *   [观看演示视频](https://www.bilibili.com/video/BV11RUfB8ELb/)
+Gazebo 模式下需要保证以下 TF 链存在：
+
+```text
+map -> odom -> base_footprint -> base_link -> 车轮/转向节
+```
+
+---
+
+## 6. 阿克曼模型与 ros2_control
+
+URDF/xacro 文件：
+
+```text
+src/ackermann_car_sim/urdf/ackermann_hunter.urdf.xacro
+```
+
+主要参数：
+
+| 参数 | 默认值 |
+| --- | --- |
+| 轴距 wheelbase | 0.65142 m |
+| 轮距 track | 0.584 m |
+| 车轮半径 wheel_radius | 0.164 m |
+| 车轮宽度 wheel_width | 0.142 m |
+| 最大转向角 | ±0.50 rad（仿真控制） |
+| 前轮转向关节 | `front_left_steer_joint` / `front_right_steer_joint` |
+| 后轮驱动关节 | `rear_left_wheel_joint` / `rear_right_wheel_joint` |
+| 前轮被动滚动关节 | `front_left_wheel_joint` / `front_right_wheel_joint` |
+
+URDF 中已经包含：
+
+- 惯性、碰撞体、视觉几何
+- 前轮转向 `revolute` 关节
+- 四轮 `continuous` 滚动关节
+- `gazebo_ros2_control/GazeboSystem` 硬件插件
+- `ros2_control` 状态接口与命令接口
+
+控制配置：
+
+```text
+src/ackermann_car_sim/config/gazebo_controllers.yaml
+```
+
+Gazebo 世界：
+
+```text
+src/ackermann_car_sim/worlds/ackermann_ground.world
+```
 
 ---
 
-## ⚠️ 免责声明 (Disclaimer)
+## 7. 工程结构
 
-1.  本项目属于本人 (**JackJu**) 在业余时间进行的个人学习与技术研究成果。
-2.  项目代码**未应用**于任何公司、机构或商业团队的实际项目中。
-3.  项目仅供**学术交流与学习使用**，不涉及任何商业利益冲突或侵权行为。
-4.  如果您使用此 2D ego-planner 进行二次开发或发表学术论文，**请引用本 Git 仓库链接**：
-    > https://github.com/JackJu-HIT/Ego-Planner-2D-ROS2
+```text
+src/
+├── EgoPlanner-ROS2/
+│   ├── planner/                         # EGO Planner 2D、A*、B 样条优化
+│   └── src/trajectory_publisher.cpp
+└── ackermann_car_sim/
+    ├── config/ackermann.rviz
+    ├── config/gazebo_controllers.yaml
+    ├── launch/bringup.launch.py          # RViz 假定位
+    ├── launch/gazebo.launch.py           # Gazebo 真实底盘
+    ├── src/ackermann_sim_node.cpp        # RViz 假定位与关节动画
+    ├── src/gazebo_path_follower.cpp      # Gazebo 路径跟踪与里程计桥接
+    ├── urdf/ackermann_hunter.urdf.xacro
+    └── worlds/ackermann_ground.world
+```
 
 ---
-*Last updated: 2025-12-30*
+
+## 8. 验证命令
+
+```bash
+# URDF 合法性
+xacro src/ackermann_car_sim/urdf/ackermann_hunter.urdf.xacro > /tmp/ackermann.urdf
+check_urdf /tmp/ackermann.urdf
+
+# 规划与轨迹
+ros2 topic echo /trajectories --once
+ros2 topic echo /visual_local_trajectory --once
+
+# Gazebo 底盘
+ros2 control list_controllers
+ros2 topic echo /ackermann_steering_controller/odometry --once
+ros2 topic echo /joint_states --once
+ros2 run tf2_ros tf2_echo map base_footprint
+```
+
+---
+
+## 9. 当前限制
+
+- 使用 Gazebo Classic 11，不是 Ignition/Gazebo Sim。
+- 当前未接入激光雷达/IMU/相机等传感器插件。
+- 当前障碍物只用于规划器可视化；Gazebo 世界中尚未自动生成对应碰撞障碍物。
+- Gazebo 模式不依赖 `2D Pose Estimate`，初始位姿来自 Gazebo 里程计；如需重置车辆位置，重新启动 Gazebo 即可。
+- 简化车身几何用于快速验证控制与规划；后续可替换为官方 Hunter STL/DAE 网格。
