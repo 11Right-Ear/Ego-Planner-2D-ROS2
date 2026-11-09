@@ -5,6 +5,7 @@
  */
 #include "trajectory_obstacles_publisher.h"
 #include <tf2/utils.h>
+#include <limits>
 #include "geometry_msgs/msg/quaternion.hpp"  // 确保包含四元数消息类型
 
 TrajectoryAndObstaclesPublisher::TrajectoryAndObstaclesPublisher() 
@@ -90,6 +91,7 @@ void TrajectoryAndObstaclesPublisher::pose_callback(const geometry_msgs::msg::Po
         msg->pose.orientation.z,
         msg->pose.orientation.w);
     cur_pose_.z = tf2::getYaw(q);
+    has_current_pose_ = true;
     // std::cout << "pose_estimate_callback " << std::endl;
 
     // 收到位置更新，且有全局路径时，应当触发检查是否需要重规划
@@ -133,6 +135,7 @@ void TrajectoryAndObstaclesPublisher::pose_estimate_callback(const geometry_msgs
         msg->pose.pose.orientation.z,
         msg->pose.pose.orientation.w);
     cur_pose_.z = tf2::getYaw(q);
+    has_current_pose_ = true;
 }
 
 void TrajectoryAndObstaclesPublisher::trigger_plan_callback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -144,24 +147,47 @@ void TrajectoryAndObstaclesPublisher::trigger_plan_callback(const std_msgs::msg:
 
 void TrajectoryAndObstaclesPublisher::goal_pose_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
-    add_obstacle_at_position(msg->pose.position.x, msg->pose.position.y);
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    if (!has_current_pose_) {
+        RCLCPP_WARN(this->get_logger(), "请先用 2D Pose Estimate 设置初始位姿。");
+        return;
+    }
+
+    PathPoint start;
+    start.x = cur_pose_.x;
+    start.y = cur_pose_.y;
+    start.z = 0.0;
+
+    PathPoint goal;
+    goal.x = msg->pose.position.x;
+    goal.y = msg->pose.position.y;
+    goal.z = 0.0;
+
+    if (distance(start, goal) < 0.05) {
+        RCLCPP_WARN(this->get_logger(), "目标点与当前位置过近，忽略本次目标。");
+        return;
+    }
+
+    // The A* guide is a direct start-to-goal line; A* reroutes around obstacles.
+    global_plan_traj_.clear();
+    global_plan_traj_.push_back(start);
+    global_plan_traj_.push_back(goal);
+    has_valid_global_path_ = true;
+    needs_replan_ = true;
+    a_star_pathes_.clear();
+
+    RCLCPP_INFO(
+        this->get_logger(),
+        "收到 2D Goal Pose: (%.2f, %.2f)，开始 A* + B样条规划。",
+        goal.x, goal.y);
 }
 
 void TrajectoryAndObstaclesPublisher::rviz_point_callback(const geometry_msgs::msg::PointStamped::SharedPtr msg)
 {
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    PathPoint point;
-    point.x = msg->point.x;
-    point.y = msg->point.y;
-    point.z = 0; 
-    global_plan_traj_.push_back(point);
-    
-    RCLCPP_INFO(this->get_logger(), "添加全局路径点: (%.2f, %.2f), 总点数: %zu", point.x, point.y, global_plan_traj_.size());
-    
-    if (global_plan_traj_.size() >= 2) {
-        has_valid_global_path_ = true;
-        needs_replan_ = true;
-    }
+    // Optional obstacle editing. Navigation goals use RViz's 2D Goal Pose.
+    add_obstacle_at_position(msg->point.x, msg->point.y);
+    RCLCPP_INFO(
+        this->get_logger(), "添加障碍物点: (%.2f, %.2f)", msg->point.x, msg->point.y);
 }
 
 void TrajectoryAndObstaclesPublisher::publish_and_plan()
@@ -215,41 +241,45 @@ void TrajectoryAndObstaclesPublisher::publish_and_plan()
             local_pose = cur_pose_;
             local_obstacles = obstacles_; // 拷贝障碍物列表
         } // <--- 锁在这里自动释放！后续
-        // 设置全局路径
+        // Build a dense guide directly from the start/goal guide.  This avoids
+        // degenerate cases where the previous two-pass discretization produced
+        // only the two original endpoints before the B-spline optimizer ran.
         if (!global_plan_traj_.empty())
         {
-            std::vector<PathPoint> global_plan_traj_temp;
-
-            discretize_trajectory(global_plan_traj_, global_plan_traj_temp, 0.3);
-             
-            float mindist = 100000000;
-            int minddex = 0;
-            for(int i = 0; i < global_plan_traj_temp.size();i++)
-            {
-                double dist =  distance(global_plan_traj_temp[i], local_pose); 
-                if(dist < mindist)
-                {
-                    mindist = dist;
-                    minddex = i;
-                } 
+            std::size_t start_index = 0;
+            double best_distance = std::numeric_limits<double>::max();
+            for (std::size_t i = 0; i < global_plan_traj_.size(); ++i) {
+                const double d = distance(global_plan_traj_[i], local_pose);
+                if (d < best_distance) {
+                    best_distance = d;
+                    start_index = i;
+                }
             }
 
-            std::vector<PathPoint> global_plan_traj_after;
-            global_plan_traj_after.push_back(local_pose);
-            for(int i = minddex; i < global_plan_traj_temp.size();i++)
-            {
-                global_plan_traj_after.push_back(global_plan_traj_temp[i]);
-            }
-            discretize_trajectory(global_plan_traj_after, global_plan_traj_temp, 0.3);
-            
-            int length = 50;
-            if(global_plan_traj_temp.size() < length) length = global_plan_traj_temp.size();
             global_plan_traj_res_.clear();
-            for(int i = 0; i < length;i++)
-            {
-                global_plan_traj_res_.push_back(global_plan_traj_temp[i]);
+            global_plan_traj_res_.push_back(local_pose);
+            constexpr double kGuideSpacing = 0.30;
+            for (std::size_t i = start_index; i + 1 < global_plan_traj_.size(); ++i) {
+                const PathPoint & a = global_plan_traj_[i];
+                const PathPoint & b = global_plan_traj_[i + 1];
+                const double segment_length = distance(a, b);
+                const int steps = std::max(1, static_cast<int>(std::ceil(segment_length / kGuideSpacing)));
+                for (int k = 1; k <= steps; ++k) {
+                    const double ratio = static_cast<double>(k) / static_cast<double>(steps);
+                    PathPoint p;
+                    p.x = a.x + static_cast<float>(ratio) * (b.x - a.x);
+                    p.y = a.y + static_cast<float>(ratio) * (b.y - a.y);
+                    p.z = 0.0f;
+                    p.v = 0.0f;
+                    global_plan_traj_res_.push_back(p);
+                    if (global_plan_traj_res_.size() >= 50) {
+                        break;
+                    }
+                }
+                if (global_plan_traj_res_.size() >= 50) {
+                    break;
+                }
             }
-            // ego_planner_->setPathPoint(global_plan_traj_res_);
         }
         ego_planner_->setPathPoint(global_plan_traj_res_);
 
@@ -282,6 +312,17 @@ void TrajectoryAndObstaclesPublisher::publish_and_plan()
         {
             ego_planner_->makePlan();
             ego_planner_->getAStarPath(a_star_pathes_);
+
+            if (!global_plan_traj_.empty()) {
+                const Eigen::Vector2d astar_start(local_pose.x, local_pose.y);
+                const Eigen::Vector2d astar_goal(
+                    global_plan_traj_.back().x, global_plan_traj_.back().y);
+                std::vector<Eigen::Vector2d> global_astar_path;
+                if (ego_planner_->planGlobalAStar(astar_start, astar_goal, global_astar_path)) {
+                    a_star_pathes_.clear();
+                    a_star_pathes_.push_back(global_astar_path);
+                }
+            }
         }
 
         //if (ego_planner_->makePlan()) {
@@ -352,7 +393,14 @@ void TrajectoryAndObstaclesPublisher::publish_a_star_path()
     // 如果没有路径数据，直接返回
     if (a_star_pathes_.empty())
     {
-    //   RCLCPP_WARN(this->get_logger(), "a_star_pathes_ is empty, no trajectories to publish.");
+      visualization_msgs::msg::MarkerArray clear_msg;
+      visualization_msgs::msg::Marker clear_marker;
+      clear_marker.header.frame_id = "map";
+      clear_marker.header.stamp = this->get_clock()->now();
+      clear_marker.ns = "a_star_paths";
+      clear_marker.action = visualization_msgs::msg::Marker::DELETEALL;
+      clear_msg.markers.push_back(clear_marker);
+      a_star_path_pub_->publish(clear_msg);
       return;
     }
 

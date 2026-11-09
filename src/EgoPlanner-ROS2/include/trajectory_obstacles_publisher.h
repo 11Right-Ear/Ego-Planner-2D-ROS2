@@ -119,6 +119,7 @@ private:
     bool has_obstacles_;
     bool should_plan_;
     bool needs_replan_;  // 新增：是否需要重新规划的标志
+    bool has_current_pose_ = false;
     bool flag_ = false;
     std::vector<PathPoint> planned_traj;
     std::vector<PathPoint> global_plan_traj_res_;

@@ -195,6 +195,25 @@ namespace ego_planner
 
     }
 
+    bool PlannerInterface::planGlobalAStar(const Eigen::Vector2d& start, const Eigen::Vector2d& goal, std::vector<Eigen::Vector2d>& path)
+    {
+        if (!bspline_optimizer_rebound_ || !bspline_optimizer_rebound_->a_star_)
+        {
+            return false;
+        }
+
+        // Use the same A* implementation and inflated GridMap2D as the planner's
+        // internal collision-segment search, but query it for the complete
+        // start-to-goal route so RViz always has a global A* line to display.
+        if (!bspline_optimizer_rebound_->a_star_->AstarSearch(0.1, start, goal))
+        {
+            return false;
+        }
+
+        path = bspline_optimizer_rebound_->a_star_->getPath();
+        return !path.empty();
+    }
+
 
     bool PlannerInterface::reboundReplan(Eigen::Vector3d start_pt, Eigen::Vector3d start_vel,
                                         Eigen::Vector3d start_acc, Eigen::Vector3d local_target_pt,

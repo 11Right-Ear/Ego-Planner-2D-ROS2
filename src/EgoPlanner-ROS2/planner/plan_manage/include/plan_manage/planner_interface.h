@@ -95,6 +95,8 @@ namespace  ego_planner
 
             void getAStarPath(vector<vector<Eigen::Vector2d>>& a_star_path);
 
+            bool planGlobalAStar(const Eigen::Vector2d& start, const Eigen::Vector2d& goal, std::vector<Eigen::Vector2d>& path);
+
             void resetMap();
 
             bool getInflateOccupancy(PathPoint& world_pos);

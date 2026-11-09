@@ -13,4 +13,4 @@ if [[ -f "$SCRIPT_DIR/install/setup.bash" ]]; then
   source "$SCRIPT_DIR/install/setup.bash"
 fi
 
-exec ros2 launch rviz_car_sim bringup.launch.py
+exec ros2 launch ackermann_car_sim bringup.launch.py "$@"
